@@ -2,72 +2,43 @@ package pkg
 
 import (
 	"fmt"
-	"log"
-	"net/http"
 
 	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/identity/v3/extensions/ec2tokens"
 )
 
-type EC2Creds struct {
-	Access  string
-	Secret  string
-	AuthURL string
+type AuthResult struct {
+	Username string
+	Project  string
+	TokenID  string
 }
 
-func OpenStackEC2Auth(ec2creds EC2Creds, debug bool) error {
-	provider, err := openstack.NewClient(ec2creds.AuthURL)
-	if err != nil {
-		return err
-	}
-
-	if debug {
-		provider.HTTPClient = http.Client{
-			Transport: &RoundTripper{
-				Rt:     &http.Transport{},
-				Logger: &logger{},
-			},
-		}
-	}
-
-	identityClient, err := openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{})
-	if err != nil {
-		return err
-	}
-
-	// auth against openstack
-	authOptions := &ec2tokens.AuthOptions{
-		Access: ec2creds.Access,
-		Secret: ec2creds.Secret,
-	}
-
-	res := ec2tokens.Create(identityClient, authOptions)
+func OpenStackEC2Auth(identityClient *gophercloud.ServiceClient, ao *ec2tokens.AuthOptions) (*AuthResult, error) {
+	res := ec2tokens.Create(identityClient, ao)
 	if res.Err != nil {
-		return res.Err
+		return nil, res.Err
 	}
 
 	user, err := res.ExtractUser()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("empty user")
 	}
 
 	project, err := res.ExtractProject()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if project == nil {
+		return nil, fmt.Errorf("empty project scope")
 	}
 
 	tokenID, err := res.ExtractTokenID()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if debug {
-		log.Printf("User: %s", user.Name)
-		log.Printf("Project: %s", project.Name)
-	}
-
-	fmt.Println(tokenID)
-
-	return nil
+	return &AuthResult{user.Name, project.Name, tokenID}, nil
 }

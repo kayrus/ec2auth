@@ -12,21 +12,21 @@ import (
 	"strings"
 )
 
-// Logger is an interface representing the Logger struct
-type Logger interface {
+// ILogger is an interface representing the Logger struct
+type ILogger interface {
 	RequestPrintf(format string, args ...interface{})
 	ResponsePrintf(format string, args ...interface{})
 }
 
-type logger struct{}
+type Logger struct{}
 
-func (lg logger) RequestPrintf(format string, args ...interface{}) {
+func (lg Logger) RequestPrintf(format string, args ...interface{}) {
 	for _, v := range strings.Split(fmt.Sprintf(format, args...), "\n") {
 		log.Printf("-> %s", v)
 	}
 }
 
-func (lg logger) ResponsePrintf(format string, args ...interface{}) {
+func (lg Logger) ResponsePrintf(format string, args ...interface{}) {
 	for _, v := range strings.Split(fmt.Sprintf(format, args...), "\n") {
 		log.Printf("<- %s", v)
 	}
@@ -57,7 +57,7 @@ type RoundTripper struct {
 	MaxRetries int
 	// If Logger is not nil, then RoundTrip method will debug the JSON
 	// requests and responses
-	Logger Logger
+	Logger ILogger
 }
 
 // List of headers that contain sensitive data.
@@ -280,7 +280,7 @@ func (rt *RoundTripper) formatJSON() func([]byte) (string, error) {
 	return f
 }
 
-func (rt *RoundTripper) log() Logger {
+func (rt *RoundTripper) log() ILogger {
 	// this is concurrency safe
 	l := rt.Logger
 	if l == nil {

@@ -5,13 +5,17 @@ UID:=$(shell id -u)
 VERSION:=$(shell git describe --tags --always --dirty="-dev")
 LDFLAGS:=-X $(PKG)/pkg.Version=$(VERSION)
 
-export GO111MODULE:=off
-export GOPATH:=$(PWD):$(PWD)/gopath
 export CGO_ENABLED:=0
 
-build: gopath/src/$(PKG) fmt
+build: fmt linux darwin windows
+
+linux:
 	GOOS=linux go build -ldflags="$(LDFLAGS)" -o bin/$(APP_NAME) ./cmd
+
+darwin:
 	GOOS=darwin go build -ldflags="$(LDFLAGS)" -o bin/$(APP_NAME)_darwin ./cmd
+
+windows:
 	GOOS=windows go build -ldflags="$(LDFLAGS)" -o bin/$(APP_NAME).exe ./cmd
 
 docker:
@@ -19,7 +23,3 @@ docker:
 
 fmt:
 	gofmt -s -w cmd pkg
-
-gopath/src/$(PKG):
-	mkdir -p gopath/src/$(shell dirname $(PKG))
-	ln -sf ../../../.. gopath/src/$(PKG)
