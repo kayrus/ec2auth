@@ -83,6 +83,8 @@ func main() {
 
 	lck := &sync.RWMutex{}
 	errs := make(map[string]uint64)
+	totalReq := new(uint64)
+	totalErr := new(uint64)
 	fps := new(uint64)
 	ops := new(uint64)
 	auth := func(limiter chan struct{}) {
@@ -128,11 +130,18 @@ func main() {
 			case <-time.After(1 * time.Second):
 				f := atomic.SwapUint64(fps, 0)
 				s := atomic.SwapUint64(ops, 0)
+				tS := atomic.AddUint64(totalReq, s)
+				tF := atomic.AddUint64(totalErr, f)
 				var perc uint64
+				var tPerc uint64
 				if s > 0 {
 					perc = 100 * f / s
 				}
+				if tS > 0 {
+					tPerc = 100 * tF / tS
+				}
 				log.Printf("%d rps, %d failed (%d%%)", s, f, perc)
+				log.Printf("total %d rps, %d failed: %d%%", tS, tF, tPerc)
 				if showErr {
 					lck.RLock()
 					for k, v := range errs {
