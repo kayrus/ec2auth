@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,12 +20,14 @@ func main() {
 	ao := &ec2tokens.AuthOptions{}
 	var authURL string
 	var debug bool
+	var showErr bool
 	var threads uint
 	flag.StringVar(&authURL, "auth-url", "", "Keystone auth URL")
 	flag.StringVar(&ao.Access, "access", "", "EC2 access")
 	flag.StringVar(&ao.Secret, "secret", "", "EC2 secret")
 	flag.UintVar(&threads, "threads", 0, "Whether to run an infinite loop with an amount of threads")
 	flag.BoolVar(&debug, "debug", false, "show debug logs")
+	flag.BoolVar(&showErr, "show-error", false, "show error type on auth failure")
 	flag.Parse()
 
 	if authURL == "" {
@@ -78,6 +81,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	lck := &sync.RWMutex{}
+	errs := make(map[string]uint64)
 	fps := new(uint64)
 	ops := new(uint64)
 	auth := func(limiter chan struct{}) {
@@ -89,6 +94,14 @@ func main() {
 				log.Print(err)
 				os.Exit(1)
 			}
+			if showErr {
+				errType := fmt.Sprintf("%T", err)
+				lck.Lock()
+				errs[errType] += 1
+				lck.Unlock()
+			}
+			<-limiter
+			return
 		}
 
 		if debug {
@@ -120,6 +133,13 @@ func main() {
 					perc = 100 * f / s
 				}
 				log.Printf("%d rps, %d failed (%d%%)", s, f, perc)
+				if showErr {
+					lck.RLock()
+					for k, v := range errs {
+						log.Printf("ERROR: %s -> %d", k, v)
+					}
+					lck.RUnlock()
+				}
 			}
 		}
 	}()
