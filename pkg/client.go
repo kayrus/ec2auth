@@ -32,20 +32,22 @@ func (lg Logger) ResponsePrintf(format string, args ...interface{}) {
 	}
 }
 
-// noopLogger is a default noop logger satisfies the Logger interface
-type noopLogger struct{}
+// NoopLogger is a default noop logger satisfies the Logger interface
+type NoopLogger struct{}
 
 // Printf is a default noop method
-func (noopLogger) RequestPrintf(format string, args ...interface{}) {}
+func (NoopLogger) RequestPrintf(format string, args ...interface{}) {}
 
 // Printf is a default noop method
-func (noopLogger) ResponsePrintf(format string, args ...interface{}) {}
+func (NoopLogger) ResponsePrintf(format string, args ...interface{}) {}
 
 // RoundTripper satisfies the http.RoundTripper interface and is used to
 // customize the default http client RoundTripper
 type RoundTripper struct {
 	// Default http.RoundTripper
 	Rt http.RoundTripper
+	// Override request Host (e.g. call locahost, but send example.com HTTP host)
+	Host *string
 	// Additional request headers to be set (not appended) in all client
 	// requests
 	headers *http.Header
@@ -168,6 +170,11 @@ func (rt *RoundTripper) RoundTrip(request *http.Request) (*http.Response, error)
 			request.Header[k] = v
 		}
 	}
+	// override HTTP host
+	host := rt.Host
+	if host != nil && *host != "" {
+		request.Host = *host
+	}
 
 	var err error
 
@@ -192,7 +199,7 @@ func (rt *RoundTripper) RoundTrip(request *http.Request) (*http.Response, error)
 
 	// If the first request didn't return a response, retry up to `max_retries`.
 	retry := 1
-	for response == nil {
+	for rt.MaxRetries > 0 && response == nil {
 		if retry > rt.MaxRetries {
 			if rt.Logger != nil {
 				rt.log().ResponsePrintf("Connection error, retries exhausted. Aborting")
@@ -208,7 +215,7 @@ func (rt *RoundTripper) RoundTrip(request *http.Request) (*http.Response, error)
 		retry += 1
 	}
 
-	if rt.Logger != nil {
+	if rt.Logger != nil && response != nil {
 		rt.log().ResponsePrintf("Code: %d", response.StatusCode)
 		rt.log().ResponsePrintf("Headers:\n%s", rt.formatHeaders(response.Header, "\n"))
 
@@ -285,7 +292,7 @@ func (rt *RoundTripper) log() ILogger {
 	l := rt.Logger
 	if l == nil {
 		// noop is used, when logger pointer has been set to nil
-		return &noopLogger{}
+		return &NoopLogger{}
 	}
 	return l
 }

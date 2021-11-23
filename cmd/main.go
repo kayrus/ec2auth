@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -19,13 +22,17 @@ import (
 func main() {
 	ao := &ec2tokens.AuthOptions{}
 	var authURL string
+	var host string
 	var debug bool
 	var showErr bool
+	var insecureTls bool
 	var threads uint
 	flag.StringVar(&authURL, "auth-url", "", "Keystone auth URL")
+	flag.StringVar(&host, "host", "", "override keystone HOST")
 	flag.StringVar(&ao.Access, "access", "", "EC2 access")
 	flag.StringVar(&ao.Secret, "secret", "", "EC2 secret")
 	flag.UintVar(&threads, "threads", 0, "Whether to run an infinite loop with an amount of threads")
+	flag.BoolVar(&insecureTls, "insecure-tls", false, "Whether to ignore server TLS certificate verification")
 	flag.BoolVar(&debug, "debug", false, "show debug logs")
 	flag.BoolVar(&showErr, "show-error", false, "show error type on auth failure")
 	flag.Parse()
@@ -67,13 +74,30 @@ func main() {
 		log.Fatal(err)
 	}
 
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: insecureTls,
+	}
+	var logger pkg.ILogger
 	if debug {
-		provider.HTTPClient = http.Client{
-			Transport: &pkg.RoundTripper{
-				Rt:     &http.Transport{},
-				Logger: &pkg.Logger{},
+		logger = &pkg.Logger{}
+	} else {
+		logger = &pkg.NoopLogger{}
+	}
+	provider.HTTPClient = http.Client{
+		Transport: &pkg.RoundTripper{
+			Rt: &http.Transport{
+				TLSClientConfig: tlsConfig,
+				Dial: (&net.Dialer{
+					Timeout:   5 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout:   9 * time.Second,
+				ResponseHeaderTimeout: 9 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
 			},
-		}
+			Host:   &host,
+			Logger: logger,
+		},
 	}
 
 	identityClient, err := openstack.NewIdentityV3(provider, gophercloud.EndpointOpts{})
@@ -97,7 +121,12 @@ func main() {
 				os.Exit(1)
 			}
 			if showErr {
-				errType := fmt.Sprintf("%T", err)
+				var errType string
+				if e, ok := err.(*url.Error); ok && e.Err != nil {
+					errType = fmt.Sprintf("%v", e.Err)
+				} else {
+					errType = fmt.Sprintf("%T", err)
+				}
 				lck.Lock()
 				errs[errType] += 1
 				lck.Unlock()
